@@ -22,7 +22,7 @@ export default function Home() {
     }}>
       {isSignedIn && (
         <div style={{ position: "absolute", top: 24, right: 24 }}>
-          <UserButton signOutUrl="/" />
+          <UserButton  />
         </div>
       )}
 
@@ -88,4 +88,5 @@ export default function Home() {
     </div>
   );
 }
+
 
