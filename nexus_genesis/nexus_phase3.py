@@ -24,28 +24,28 @@ from typing import Optional
 # PATH REGISTRY — where each repo lives on disk
 # ---------------------------------------------------------------------------
 REPO_PATHS = {
-    "llmpick":       Path(r"C:\Users\scott\LlmPick\router.py"),
-    "commander":     Path(r"C:\Users\scott\Commander\control_tower.py"),
-    "decision_risk": Path(r"C:\Users\scott\DecisionMaker\risk_engine.py"),
+    "llmpick":       Path(r"LlmPick\router.py"),
+    "commander":     Path(r"Commander\control_tower.py"),
+    "decision_risk": Path(r"DecisionMaker\risk_engine.py"),
 }
 
 
 # Key-specific fallback paths — each module only falls back to its own alternatives
 _FALLBACKS = {
     "llmpick": [
-        Path(r"C:\Users\scott\LlmPick\router.py"),
-        Path(r"C:\Users\scott\llmpick\llmpick.py"),
-        Path(r"C:\Users\scott\LLMPick\llmpick.py"),
+        Path(r"LlmPick\router.py"),
+        Path(r"LlmPick\llmpick.py"),
+        Path(r"LlmPick\llmpick.py"),
     ],
     "commander": [
-        Path(r"C:\Users\scott\Commander\control_tower.py"),
-        Path(r"C:\Users\scott\commander\control_tower.py"),
-        Path(r"C:\Users\scott\Commander\commander.py"),
+        Path(r"Commander\control_tower.py"),
+        Path(r"Commander\control_tower.py"),
+        Path(r"Commander\commander.py"),
     ],
     "decision_risk": [
-        Path(r"C:\Users\scott\DecisionMaker\risk_engine.py"),
+        Path(r"DecisionMaker\risk_engine.py"),
         Path(r"C:\Users\scott\DecisionRiskEval\decision_risk_eval.py"),
-        Path(r"C:\Users\scott\decisionmaker\risk_engine.py"),
+        Path(r"DecisionMaker\risk_engine.py"),
     ],
 }
 
