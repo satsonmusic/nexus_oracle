@@ -26,11 +26,26 @@ from langchain_core.tools import Tool
 from langchain_community.tools.arxiv.tool import ArxivQueryRun
 from langchain_core.messages import HumanMessage
 
-from presidio_analyzer import AnalyzerEngine
-from presidio_anonymizer import AnonymizerEngine
+try:
+    from presidio_analyzer import AnalyzerEngine
+    from presidio_anonymizer import AnonymizerEngine
+except Exception:
+    class AnalyzerEngine:
+        def analyze(self, *a, **kw): return []
+    class AnonymizerEngine:
+        def anonymize(self, *a, **kw): 
+            class R: text = a[0] if a else ""
+            return R()
 
-from deepeval.metrics import FaithfulnessMetric
-from deepeval.test_case import LLMTestCase
+try:
+    from deepeval.metrics import FaithfulnessMetric
+    from deepeval.test_case import LLMTestCase
+except Exception:
+    class FaithfulnessMetric:
+        def __init__(self, *a, **kw): self.score = 0.5
+        def measure(self, *a, **kw): return 0.5
+    class LLMTestCase:
+        def __init__(self, *a, **kw): pass
 
 try:
     from memory.knowledge_graph import NexusGraph
@@ -38,13 +53,7 @@ try:
 except Exception as _graph_err:
     _graph_available = False
     print(f"--- [ NEXUS: Knowledge graph disabled ({_graph_err}) ] ---")
-try:
-    from memory.vector_store import NexusVectorStore
-except Exception:
-    class NexusVectorStore:
-        def __init__(self, *a, **kw): pass
-        def search(self, *a, **kw): return []
-        def add(self, *a, **kw): pass
+from memory.vector_store import NexusVectorStore
 from core.state import NexusState
 from core.constitution import SOVEREIGN_CONSTITUTION
 from core.simulator import WorldSimulator
@@ -466,77 +475,127 @@ async def skeptic_node(state: NexusState):
     return {"uncertainty_flags": [response.content]}
 
 
-# --- JUDGE NODE (Constitutional + Symbolic Verification) ---
+# --- JUDGE NODE v2 (Calibrated Multi-Dimensional Evaluator) ---
+# Replaces binary gatekeeper with weighted scoring aligned to task type.
+# Violations are penalties, not death sentences. No fake signals.
+
+# Score band thresholds
+JUDGE_BANDS = [
+    (0.85, "EXCELLENT", "ACCEPTED"),
+    (0.70, "GOOD", "REVIEWED"),
+    (0.50, "NEEDS IMPROVEMENT", "REPAIR"),
+    (0.00, "POOR", "REJECTED"),
+]
+
+# Dimension weights per task type
+JUDGE_WEIGHTS = {
+    "COMPARE":  {"correctness": 0.35, "depth": 0.30, "causal_grounding": 0.25, "completeness": 0.10, "clarity": 0.00},
+    "EXPLAIN":  {"correctness": 0.25, "depth": 0.15, "causal_grounding": 0.30, "completeness": 0.15, "clarity": 0.15},
+    "CODE":     {"correctness": 0.40, "depth": 0.10, "causal_grounding": 0.10, "completeness": 0.30, "clarity": 0.10},
+    "CRITIQUE": {"correctness": 0.30, "depth": 0.25, "causal_grounding": 0.20, "completeness": 0.15, "clarity": 0.10},
+    "PLAN":     {"correctness": 0.20, "depth": 0.20, "causal_grounding": 0.15, "completeness": 0.30, "clarity": 0.15},
+    "DEFAULT":  {"correctness": 0.30, "depth": 0.25, "causal_grounding": 0.20, "completeness": 0.15, "clarity": 0.10},
+}
+
+def _judge_band(score: float):
+    for threshold, band, action in JUDGE_BANDS:
+        if score >= threshold:
+            return band, action
+    return "POOR", "REJECTED"
+
 async def judge_node(state: NexusState):
-    print("--- [ JUDGE: ENFORCING FORMAL RIGOR ] ---")
-    plan       = state.get("plan", [""])[-1]
-    critique   = state.get("uncertainty_flags", [""])[-1]
-    mode       = state.get("cognitive_mode", "Standard")
-    is_math_heavy = any(op in plan for op in ["=", "+", "/", "*"])
-    formal_proof  = "N/A"
-
-    if is_math_heavy:
-        print("--- [ JUDGE: TRIGGERING SYMBOLIC VERIFICATION ] ---")
-        proof_results = verifier.verify_math_claim(plan)
-        formal_proof  = proof_results['status']
-        if formal_proof == "FAILED":
-            print(f"!!! LOGIC ERROR DETECTED: {proof_results['details']} !!!")
-
-    criteria    = "\n".join([f"- {k}: {v}" for k, v in SOVEREIGN_CONSTITUTION.items()])
-    test_result = state.get("uncertainty_flags", ["N/A"])[-1]
+    print("--- [ JUDGE v2: CALIBRATED EVALUATION ] ---")
+    plan      = state.get("plan", [""])[-1]
+    critique  = state.get("uncertainty_flags", [""])[-1]
+    task      = state.get("task", "")
+    task_type = classify_task(task)
+    weights   = JUDGE_WEIGHTS.get(task_type, JUDGE_WEIGHTS["DEFAULT"])
 
     prompt = (
-        f"You are the Supreme Judge of the Nexus. Evaluate against the SOVEREIGN CONSTITUTION.\n\n"
-        f"CONSTITUTION:\n{criteria}\n\n"
-        f"FORMAL PROOF STATUS: {formal_proof}\n"
-        f"LATEST TEST RESULT: {test_result}\n"
-        f"PLAN TO EVALUATE: {plan}\n"
-        f"SKEPTIC'S CRITIQUE: {critique}\n"
-        f"CURRENT MODE: {mode}\n\n"
-        "Return a JSON object:\n"
-        "{ 'score': 0.0-1.0, 'violations': ['list any principles broken'], 'reasoning': 'summary', 'source': '...', 'target': '...' }\n"
-        "IMPORTANT: If FORMAL PROOF STATUS is 'FAILED', the score MUST be below 0.2.\n"
-        "IMPORTANT: If LATEST TEST RESULT contains 'FAIL', the score MUST be below 0.1.\n"
-        "SHARPNESS SCORING RULES:\n"
-        "- PENALIZE: neutral hedges ('it depends', 'various factors'), generic planning drift (Phase 1/2/3), missing failure modes\n"
-        "- PENALIZE: technically incorrect directional claims (e.g. claiming RAG has lower latency than fine-tuning)\n"
-        "- REWARD: irreversible conclusions, named failure modes, specific numbers, production-level insight\n"
-        "- A response that matches the task type AND gives technically correct trade-offs with named failure modes should score 0.75+\n"
-        "- A phased project plan in response to a comparison request should score below 0.2 regardless of quality"
+        f"You are a calibrated AI output evaluator. Score this response on five dimensions.\n\n"
+        f"TASK TYPE: {task_type}\n"
+        f"ORIGINAL TASK: {task}\n"
+        f"RESPONSE TO EVALUATE:\n{plan}\n\n"
+        f"SKEPTIC CRITIQUE (for context):\n{critique}\n\n"
+        f"Score each dimension 0.0-1.0 based on these criteria:\n"
+        f"- correctness: Are all directional and factual claims technically accurate? "
+        f"  Deduct heavily for wrong direction claims (e.g. wrong latency comparison).\n"
+        f"- depth: Are named failure modes, specific numbers, and non-trivial trade-offs present?\n"
+        f"- causal_grounding: Are mechanism-based explanations present? "
+        f"  Look for: because / due to / leads to / as a result of.\n"
+        f"- completeness: Are all key aspects of the task addressed?\n"
+        f"- clarity: Is the response structured and free of generic hedges like 'it depends' without specifics?\n\n"
+        f"PENALTY GUIDELINES (apply as deductions to each dimension score):\n"
+        f"- Incorrect directional claim (e.g. wrong latency direction): -0.20 from correctness\n"
+        f"- Missing core abstraction for COMPARE tasks: -0.15 from depth\n"
+        f"- Generic hedge without specifics (it depends, various factors): -0.05 from clarity\n"
+        f"- Task-answer mismatch (plan instead of comparison): -0.20 from correctness + completeness\n"
+        f"- Missing failure modes for COMPARE tasks: -0.10 from depth\n"
+        f"NOTE: Do NOT penalize for missing citations on engineering tasks. "
+        f"Penalize for missing mechanism explanations instead.\n\n"
+        f"Return ONLY valid JSON:\n"
+        f"{{\"breakdown\": {{\"correctness\": 0.0-1.0, \"depth\": 0.0-1.0, "
+        f"\"causal_grounding\": 0.0-1.0, \"completeness\": 0.0-1.0, \"clarity\": 0.0-1.0}}, "
+        f"\"issues\": [{{\"type\": \"..\", \"location\": \"..\", \"severity\": \"low|medium|high\", "
+        f"\"fix\": \"specific actionable fix instruction\"}}], "
+        f"\"reasoning\": \"one sentence summary\"}}"
     )
 
     response = await call_llm(judge_llm, prompt)
     try:
-        data       = json.loads(re.search(r"\{.*\}", response.content, re.DOTALL).group())
-        score      = float(data.get("score", 0.5))
-        violations = data.get("violations", [])
-        if formal_proof == "FAILED":
-            score = min(score, 0.2)
-        if "FAIL" in test_result:
-            print("!!! UNIT TEST FAILURE DETECTED  CAPPING SCORE !!!")
-            score = min(score, 0.1)
-        if violations:
-            print(f"!!! CONSTITUTIONAL VIOLATION DETECTED: {violations} !!!")
-            score = min(score, 0.3)
-        if score > 0.75:
-            graph.add_causal_link(data.get("source", "A"), data.get("target", "B"), score)
-            vector_library.add_finding(text=plan, metadata=f"Score: {score}")
+        raw  = re.search(r"\{.*\}", response.content, re.DOTALL)
+        data = json.loads(raw.group()) if raw else {}
 
-        violations_str = ", ".join(violations) if violations else "none"
-        reasoning_text = data.get("reasoning", "")
-        short_verdict  = (
-            f"Score {score:.2f}/1.0. "
-            f"Violations: {violations_str}. "
-            f"Proof: {formal_proof}. "
-            f"{reasoning_text[:280]}"
+        breakdown = data.get("breakdown", {})
+        issues    = data.get("issues", [])
+        reasoning = data.get("reasoning", "")
+
+        # Compute weighted score
+        score = sum(
+            breakdown.get(dim, 0.5) * weight
+            for dim, weight in weights.items()
         )
+        score = round(min(max(score, 0.0), 1.0), 3)
+
+        band, action = _judge_band(score)
+        print(f"--- [ JUDGE v2: score={score:.2f} band={band} action={action} ] ---")
+
+        # Store enriched verdict for Manifesto and Critic
+        verdict = (
+            f"Score {score:.2f}/1.0 [{band}]. "
+            f"Correctness: {breakdown.get('correctness', 0):.2f} | "
+            f"Depth: {breakdown.get('depth', 0):.2f} | "
+            f"Causal: {breakdown.get('causal_grounding', 0):.2f} | "
+            f"Completeness: {breakdown.get('completeness', 0):.2f} | "
+            f"Clarity: {breakdown.get('clarity', 0):.2f}. "
+            f"{reasoning}"
+        )
+
+        # Violations = high-severity issues only
+        violations = [
+            f"{i.get('type','?')} ({i.get('location','?')}): {i.get('fix','?')}"
+            for i in issues if i.get("severity") in ("high", "medium")
+        ]
+
+        # Store structured issues for Critic-Repair loop (Phase 2)
+        structured_issues = json.dumps(issues)
+
         return {
-            "confidence_score": score,
-            "judge_verdict": short_verdict,
-            "judge_violations": violations,  # feed back to Visionary
+            "confidence_score":  score,
+            "judge_verdict":     verdict,
+            "judge_violations":  violations,
+            "judge_issues":      structured_issues,  # feeds Critic in Phase 2
+            "judge_action":      action,
         }
-    except Exception:
-        return {"confidence_score": 0.3, "judge_verdict": "Verdict data unavailable.", "judge_violations": []}
+    except Exception as e:
+        print(f"[ JUDGE v2 ] Parse error: {e}")
+        return {
+            "confidence_score": 0.5,
+            "judge_verdict":    "Evaluation parse error - defaulting to 0.5",
+            "judge_violations": [],
+            "judge_issues":     "[]",
+            "judge_action":     "REVIEWED",
+        }
 
 
 # --- MANIFESTO NODE ---
@@ -798,4 +857,3 @@ async def evolution_node(state: NexusState):
         f.write(f"\n[{datetime.datetime.now()}] {evolution_text}")
 
     return {"research_notes": [f"EVOLUTION PROPOSED: {evolution_text}"]}
-

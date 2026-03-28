@@ -26,6 +26,8 @@ class NexusState(TypedDict, total=False):
     # Judge
     judge_verdict:      str
     judge_violations:   List[str]   # violations fed back to Visionary
+    judge_issues:       str          # structured JSON issues for Critic-Repair loop
+    judge_action:       str          # ACCEPTED | REVIEWED | REPAIR | REJECTED
 
     # Phase 3 — Decision Layer
     selected_model:     str          # LlmPick: best model for this session
