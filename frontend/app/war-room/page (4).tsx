@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { UserButton, useUser } from "@clerk/nextjs";
 
 // ---------------------------------------------------------------------------
 // TYPES
