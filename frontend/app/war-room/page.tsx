@@ -172,7 +172,7 @@ export default function WarRoomPage() {
 
       ws.onerror = () => setStatus("error");
       ws.onclose = () => {
-        if (status === "running") setStatus("complete");
+        setStatus((prev) => (prev === "running" ? "complete" : prev));
       };
 
     } catch (e) {
@@ -536,3 +536,4 @@ export default function WarRoomPage() {
     </div>
   );
 }
+
