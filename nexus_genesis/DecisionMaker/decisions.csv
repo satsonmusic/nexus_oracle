@@ -1,0 +1,3 @@
+program,workstream,decider,title,status,deadline,last_update,context
+Digit Scale,Ops Readiness,VP Ops,Contractor training support?,Open,2026-03-24,2026-03-12,"Blocked: trainer availability risk; waiting on budget approval"
+Digit Scale,Hardware Rev A,Eng Director,Bracket supplier switch,Open,2026-03-26,2026-03-19,"Supplier delayed; dependency risk"
