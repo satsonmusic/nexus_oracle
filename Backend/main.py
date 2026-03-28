@@ -50,6 +50,9 @@ import asyncio
 from contextlib import asynccontextmanager
 from app.database import create_tables
 from app.redis_client import check_rate_limit, get_usage_stats
+from contextlib import asynccontextmanager
+from app.database import create_tables
+from app.redis_client import check_rate_limit, get_usage_stats
 import time
 from collections import defaultdict
 from fastapi import Request
@@ -440,4 +443,5 @@ async def nexus_health():
             "phase3":       True,
         }
     }
+
 
