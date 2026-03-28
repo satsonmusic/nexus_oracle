@@ -1,0 +1,17 @@
+{
+  "topic_vault": {
+    "physics": {
+      "hits": 1,
+      "last_seen": "2026-03-27T19:05:10.008692"
+    },
+    "botany": {
+      "hits": 1,
+      "last_seen": "2026-03-27T19:45:59.582591"
+    },
+    "machine_learning": {
+      "hits": 11,
+      "last_seen": "2026-03-27T23:00:10.059839"
+    }
+  },
+  "global_interactions": 13
+}

@@ -1,0 +1,6 @@
+outs:
+- md5: cf36968ab3333c099d7052203fb47897.dir
+  size: 19011
+  nfiles: 11
+  hash: md5
+  path: memory

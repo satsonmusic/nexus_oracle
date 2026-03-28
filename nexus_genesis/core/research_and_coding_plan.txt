@@ -1,0 +1,44 @@
+### Research Plan
+
+1. **Gather Data from Tier Lists:**
+   - Identify popular tier lists from reputable sources (e.g., Smashboards, EventHubs).
+   - Focus on characters ranked high for speed, recovery, and frame data.
+
+2. **Consult Character Guides:**
+   - Look for guides on characters that excel in speed, recovery, and frame data.
+   - Prioritize guides that include detailed frame data, movement speed, and jump height analysis.
+
+3. **Community Insights:**
+   - Join forums and communities (e.g., Reddit's r/smashbros) to gather opinions on effective characters for your criteria.
+   - Follow top players and streamers to observe their character choices and strategies.
+
+4. **Balance Attributes:**
+   - Create a shortlist of characters that offer a good balance of speed, power, and recovery.
+   - Consider your current mastery level (0.2) and opt for characters that are beginner-friendly but still competitive.
+
+### Coding Plan
+
+1. **Data Collection Script:**
+   - Develop a script to scrape data from tier lists and community forums for comprehensive analysis.
+   - Extract key attributes: frame data, speed, jump height, and recovery ability.
+
+2. **Attribute Analysis Tool:**
+   - Create a tool to visualize and compare character attributes.
+   - Use this tool to dynamically filter characters based on desired attributes (e.g., speed, recovery).
+
+3. **Simulated Match Analysis:**
+   - Write a script to simulate matches using the selected characters to test their performance.
+   - Analyze outcomes to determine which characters provide the best balance for your skill level.
+
+4. **Feedback Loop:**
+   - Implement a system to gather feedback from your own gameplay experiences.
+   - Adjust character selection based on performance data and personal comfort with their play style.
+
+### Implementation Steps
+
+- **Phase 1:** Conduct initial research and data collection to identify a preliminary list of candidates.
+- **Phase 2:** Develop and deploy coding tools for data visualization and analysis.
+- **Phase 3:** Test selected characters in gameplay scenarios and refine choices based on results.
+- **Phase 4:** Iterate on character selection, incorporating ongoing community insights and personal performance feedback.
+
+By following this structured plan, you'll be able to make an informed decision on the best Super Smash Bros. character for your play style and skill level, while leveraging both community wisdom and data-driven insights.

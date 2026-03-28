@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  # The 'Synapses': Causal Graph Memory 
+  nexus_graph:
+    image: neo4j:5.12.0
+    container_name: nexus_neo4j
+    ports:
+      - "7474:7474" 
+      - "7687:7687" 
+    environment:
+      # Use ${VAR} syntax to pull from your .env file
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD} 
+    volumes:
+      - nexus_neo4j_data:/data
+
+  # The 'Facts': Relational Data & User Profiles [cite: 14, 38]
+  nexus_db:
+    image: postgres:15
+    container_name: nexus_postgres
+    ports:
+    
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=nexus_genesis
+      - POSTGRES_USER=nexus_admin
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - nexus_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  nexus_neo4j_data:
+  nexus_postgres_data:
