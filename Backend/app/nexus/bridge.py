@@ -20,7 +20,7 @@ from typing import AsyncGenerator, Optional
 # ---------------------------------------------------------------------------
 # PATH BRIDGE — import Nexus Genesis from Desktop without moving files
 # ---------------------------------------------------------------------------
-NEXUS_ROOT = Path(r"C:\Users\scott\Desktop\nexus_genesis")
+NEXUS_ROOT = Path(os.environ.get("NEXUS_ROOT", "/app/nexus_genesis"))
 if str(NEXUS_ROOT) not in sys.path:
     sys.path.insert(0, str(NEXUS_ROOT))
 
@@ -293,3 +293,4 @@ def get_intelligence_signals(limit: int = 10) -> list:
         return {"signals": signals, "stats": stats}
     except Exception as e:
         return {"signals": [], "stats": {"total": 0, "triggered": 0, "avg_score": 0.0}, "error": str(e)}
+
