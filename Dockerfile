@@ -20,6 +20,10 @@ WORKDIR /app/Backend
 RUN pip install --no-cache-dir \
     fastapi \
     "uvicorn[standard]" \
+    sqlalchemy[asyncio] \
+    asyncpg \
+    aiosqlite \
+    "redis[asyncio]" \
     openai \
     pydantic \
     python-dotenv \

@@ -47,8 +47,85 @@ def get_intelligence_signals(limit=10):
     return {"signals": [], "stats": {"total": 0, "triggered": 0, "avg_score": 0.0}}
 import json
 import asyncio
+import time
+from collections import defaultdict
+from fastapi import Request
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="JarvisSatSon", version="4.0.0")
+# Phase 2: Database + Redis
+from app.database import create_tables, AsyncSessionLocal, Session as DBSession, Dossier as DBDossier, JudgeViolation
+from app.redis_client import check_rate_limit, get_usage_stats
+from sqlalchemy import select
+import uuid
+
+# ---------------------------------------------------------------------------
+# STARTUP — create DB tables on boot
+# ---------------------------------------------------------------------------
+@asynccontextmanager
+async def lifespan(app):
+    try:
+        await create_tables()
+    except Exception as e:
+        print(f"[ DATABASE ] Startup error: {e}")
+    yield
+
+app = FastAPI(title="JarvisSatSon", version="4.0.0", lifespan=lifespan)
+
+# ---------------------------------------------------------------------------
+# RATE LIMITING — protects against API cost overruns
+# ---------------------------------------------------------------------------
+# Limits per IP address
+RATE_LIMITS = {
+    "sovereign_per_hour":  5,    # max SOVEREIGN runs per IP per hour
+    "quick_per_hour":      30,   # max QUICK requests per IP per hour
+    "sovereign_per_day":   15,   # max SOVEREIGN runs per IP per day
+}
+
+# In-memory store: { ip: { "sovereign": [(timestamp), ...], "quick": [...] } }
+_usage: dict = defaultdict(lambda: {"sovereign": [], "quick": []})
+
+def _get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+def _check_rate_limit(ip: str, call_type: str) -> tuple[bool, str]:
+    """Returns (allowed, reason). Cleans up old timestamps."""
+    now = time.time()
+    hour_ago = now - 3600
+    day_ago  = now - 86400
+
+    # Clean old entries
+    _usage[ip][call_type] = [t for t in _usage[ip][call_type] if t > day_ago]
+
+    recent_hour = [t for t in _usage[ip][call_type] if t > hour_ago]
+    recent_day  = _usage[ip][call_type]
+
+    if call_type == "sovereign":
+        if len(recent_hour) >= RATE_LIMITS["sovereign_per_hour"]:
+            return False, f"Rate limit: max {RATE_LIMITS['sovereign_per_hour']} SOVEREIGN runs per hour. Try again later."
+        if len(recent_day) >= RATE_LIMITS["sovereign_per_day"]:
+            return False, f"Daily limit: max {RATE_LIMITS['sovereign_per_day']} SOVEREIGN runs per day."
+    elif call_type == "quick":
+        if len(recent_hour) >= RATE_LIMITS["quick_per_hour"]:
+            return False, f"Rate limit: max {RATE_LIMITS['quick_per_hour']} requests per hour."
+
+    _usage[ip][call_type].append(now)
+    return True, ""
+
+def _get_usage_stats(ip: str) -> dict:
+    """Returns current usage counts for an IP."""
+    now = time.time()
+    hour_ago = now - 3600
+    day_ago  = now - 86400
+    s = _usage[ip]
+    return {
+        "sovereign_this_hour": len([t for t in s["sovereign"] if t > hour_ago]),
+        "sovereign_today":     len([t for t in s["sovereign"] if t > day_ago]),
+        "quick_this_hour":     len([t for t in s["quick"]     if t > hour_ago]),
+        "limits": RATE_LIMITS,
+    }
 
 app.add_middleware(
     CORSMiddleware,
@@ -89,7 +166,7 @@ async def root():
 
 
 @app.post("/assistant")
-async def assistant(payload: dict):
+async def assistant(payload: dict, request: Request):
     try:
         import asyncio
         loop = asyncio.get_event_loop()
@@ -187,7 +264,7 @@ async def ws_endpoint(ws: WebSocket):
 # ---------------------------------------------------------------------------
 
 @app.post("/nexus/run")
-async def nexus_run(payload: dict):
+async def nexus_run(payload: dict, request: Request):
     """
     Start a Nexus pipeline run.
     Body: {"task": "...", "max_iterations": 3, "min_confidence": 0.75}
@@ -199,7 +276,18 @@ async def nexus_run(payload: dict):
 
     if not task:
         return JSONResponse({"error": "task is required"}, status_code=400)
-    
+
+    # Rate limiting via Redis
+    client_ip = _get_client_ip(request)
+    allowed, reason = await check_rate_limit(client_ip, "sovereign")
+    if not allowed:
+        stats = await get_usage_stats(client_ip)
+        return JSONResponse({
+            "error": reason,
+            "usage": stats,
+            "upgrade": "Upgrade to Pro for higher limits: nexus-oracle-ten.vercel.app"
+        }, status_code=429)
+
     # Force load pipeline with full diagnostics
     print(f"[ NEXUS RUN ] Task received: {task[:50]}")
     import sys as _sys
@@ -328,6 +416,14 @@ async def nexus_signals(limit: int = 10):
         return await loop.run_in_executor(None, lambda: get_intelligence_signals(limit))
     except Exception:
         return {"signals": [], "stats": {"total": 0, "triggered": 0, "avg_score": 0.0}}
+
+
+@app.get("/usage")
+async def usage(request: Request):
+    """Returns current usage stats for this user/IP."""
+    ip = _get_client_ip(request)
+    stats = await get_usage_stats(ip)
+    return stats
 
 
 @app.get("/nexus/health")
