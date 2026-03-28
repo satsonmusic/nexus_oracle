@@ -1,0 +1,19 @@
+{
+  "topic_vault": {
+    "physics": {
+      "hits": 1,
+      "last_seen": "2026-03-27T19:05:10.008692"
+    },
+    "botany": {
+      "hits": 1,
+      "last_seen": "2026-03-27T19:45:59.582591"
+    },
+    "machine_learning": {
+      "hits": 12,
+      "last_seen": "2026-03-27T23:00:10.059839",
+      "description": "Exploring architectural trade-offs between Retrieval-Augmented Generation (RAG) and fine-tuning for real-time knowledge updates in AI assistants."
+    }
+  },
+  "global_interactions": 13,
+  "current_session_mastery": 1.0
+}
