@@ -38,7 +38,13 @@ try:
 except Exception as _graph_err:
     _graph_available = False
     print(f"--- [ NEXUS: Knowledge graph disabled ({_graph_err}) ] ---")
-from memory.vector_store import NexusVectorStore
+try:
+    from memory.vector_store import NexusVectorStore
+except Exception:
+    class NexusVectorStore:
+        def __init__(self, *a, **kw): pass
+        def search(self, *a, **kw): return []
+        def add(self, *a, **kw): pass
 from core.state import NexusState
 from core.constitution import SOVEREIGN_CONSTITUTION
 from core.simulator import WorldSimulator
