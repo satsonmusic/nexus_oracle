@@ -598,6 +598,143 @@ async def judge_node(state: NexusState):
         }
 
 
+# --- CRITIC NODE (Phase 2: Structured Error Analysis) ---
+async def critic_node(state: NexusState):
+    print("--- [ CRITIC: STRUCTURED ERROR ANALYSIS ] ---")
+    plan        = state.get("plan", [""])[-1]
+    judge_issues_raw = state.get("judge_issues", "[]")
+    task        = state.get("task", "")
+    task_type   = classify_task(task)
+    score       = state.get("confidence_score", 0.0)
+    iteration   = state.get("iterations", 0)
+
+    # Parse structured issues from Judge v2
+    try:
+        judge_issues = json.loads(judge_issues_raw) if judge_issues_raw else []
+    except Exception:
+        judge_issues = []
+
+    print(f"--- [ CRITIC: {len(judge_issues)} issues from Judge, score={score:.2f}, iter={iteration} ] ---")
+
+    # Build issue summary for prompt
+    issues_text = ""
+    for i, issue in enumerate(judge_issues, 1):
+        issues_text += (
+            f"Issue {i}: [{issue.get('severity','?').upper()}] {issue.get('type','?')}\n"
+            f"  Location: {issue.get('location','?')}\n"
+            f"  Fix: {issue.get('fix','?')}\n"
+        )
+
+    if not issues_text:
+        issues_text = "No specific issues identified by Judge. Focus on depth and completeness."
+
+    prompt = (
+        f"You are a structured critic. Analyse this AI response and produce a precise repair plan.\n\n"
+        f"TASK: {task}\n"
+        f"TASK TYPE: {task_type}\n"
+        f"CURRENT SCORE: {score:.2f}/1.0\n"
+        f"JUDGE-IDENTIFIED ISSUES:\n{issues_text}\n"
+        f"CURRENT RESPONSE:\n{plan[:2000]}\n\n"
+        f"Produce a JSON repair plan with EXACTLY these fields:\n"
+        f"{{\"repair_actions\": ["
+        f"{{\"action\": \"add|fix|remove|expand\", "
+        f"\"target\": \"exact location in response\", "
+        f"\"instruction\": \"precise what to write or change\", "
+        f"\"priority\": \"critical|high|medium\"}}], "
+        f"\"summary\": \"one sentence describing what will improve\", "
+        f"\"expected_score_improvement\": 0.0-0.3}}"
+        f"\n\nBe surgical. Do not suggest rewriting the entire response. "
+        f"Fix only what the Judge flagged. Maximum 4 repair actions."
+    )
+
+    response = await call_llm(visionary_llm, prompt)
+
+    try:
+        raw  = re.search(r"\{.*\}", response.content, re.DOTALL)
+        data = json.loads(raw.group()) if raw else {}
+        repair_plan = json.dumps(data)
+        summary = data.get("summary", "Applying targeted fixes")
+        expected_improvement = data.get("expected_score_improvement", 0.1)
+        print(f"--- [ CRITIC: repair plan ready — {summary} (expected +{expected_improvement:.2f}) ] ---")
+    except Exception as e:
+        print(f"[ CRITIC ] Parse error: {e}")
+        repair_plan = json.dumps({"repair_actions": [], "summary": "Fallback: general improvement pass"})
+        summary = "General improvement pass"
+
+    # Store repair plan in uncertainty_flags for Visionary to read
+    return {
+        "uncertainty_flags": state.get("uncertainty_flags", []) + [f"REPAIR_PLAN: {repair_plan}"],
+        "repair_summary": summary,
+    }
+
+
+# --- REPAIR NODE (Phase 2: Surgical Output Improvement) ---
+async def repair_node(state: NexusState):
+    print("--- [ REPAIR: APPLYING SURGICAL FIXES ] ---")
+    plan        = state.get("plan", [""])[-1]
+    task        = state.get("task", "")
+    task_type   = classify_task(task)
+    score       = state.get("confidence_score", 0.0)
+    iteration   = state.get("iterations", 0)
+
+    # Extract repair plan from uncertainty_flags
+    repair_plan_raw = ""
+    for flag in reversed(state.get("uncertainty_flags", [])):
+        if flag.startswith("REPAIR_PLAN:"):
+            repair_plan_raw = flag[len("REPAIR_PLAN:"):].strip()
+            break
+
+    try:
+        repair_data    = json.loads(repair_plan_raw) if repair_plan_raw else {}
+        repair_actions = repair_data.get("repair_actions", [])
+        repair_summary = repair_data.get("summary", "Improve response quality")
+    except Exception:
+        repair_actions = []
+        repair_summary = "Improve response quality"
+
+    # Format repair instructions
+    actions_text = ""
+    for i, action in enumerate(repair_actions, 1):
+        actions_text += (
+            f"Action {i} [{action.get('priority','?').upper()}]: {action.get('action','fix').upper()} "
+            f"at '{action.get('target','?')}'\n"
+            f"  Instruction: {action.get('instruction','Improve this section')}\n"
+        )
+
+    if not actions_text:
+        actions_text = "Improve overall depth and completeness."
+
+    # Get task shape for this task type
+    task_shapes = TASK_SHAPES.get(task_type, TASK_SHAPES.get("EXPLAIN", ""))
+
+    prompt = (
+        f"You are repairing an AI response. Apply ONLY the specified fixes — do not rewrite everything.\n\n"
+        f"TASK: {task}\n"
+        f"TASK TYPE: {task_type}\n"
+        f"CURRENT SCORE: {score:.2f}/1.0 — target 0.85+\n"
+        f"REPAIR GOAL: {repair_summary}\n\n"
+        f"REPAIR ACTIONS (apply all of these):\n{actions_text}\n"
+        f"CURRENT RESPONSE TO REPAIR:\n{plan}\n\n"
+        f"OUTPUT REQUIREMENTS:\n{task_shapes}\n\n"
+        f"Produce the repaired response. Keep everything that was correct. "
+        f"Only change what the repair actions specify. "
+        f"The output should be noticeably better on: depth, correctness, and completeness."
+    )
+
+    response = await call_llm(visionary_llm, prompt)
+
+    # Sanitize for Windows console
+    safe = response.content.encode('cp1252', errors='replace').decode('cp1252')
+
+    new_iteration = iteration + 1
+    print(f"--- [ REPAIR: iteration {new_iteration} complete ] ---")
+
+    return {
+        "plan":       state.get("plan", []) + [safe],
+        "iterations": new_iteration,
+    }
+
+
 # --- MANIFESTO NODE ---
 async def manifesto_node(state: NexusState):
     print("--- [ MANIFESTO: GENERATING SOVEREIGN DOSSIER ] ---")

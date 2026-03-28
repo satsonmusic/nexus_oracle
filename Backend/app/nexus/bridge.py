@@ -20,7 +20,9 @@ from typing import AsyncGenerator, Optional
 # ---------------------------------------------------------------------------
 # PATH BRIDGE — import Nexus Genesis from Desktop without moving files
 # ---------------------------------------------------------------------------
-NEXUS_ROOT = Path(os.environ.get("NEXUS_ROOT", "/app/nexus_genesis"))
+# NEXUS_ROOT: use env var in production, fall back to local dev path
+_default_root = Path(r"C:\Users\scott\Desktop\nexus_genesis")
+NEXUS_ROOT = Path(os.environ.get("NEXUS_ROOT", str(_default_root)))
 if str(NEXUS_ROOT) not in sys.path:
     sys.path.insert(0, str(NEXUS_ROOT))
 
@@ -35,9 +37,16 @@ def _load_pipeline():
     print("[ NEXUS BRIDGE ] Attempting to load pipeline...")
     import traceback as _tb
     try:
-        if str(NEXUS_ROOT) not in sys.path:
-            sys.path.insert(0, str(NEXUS_ROOT))
+        # Ensure NEXUS_ROOT and its parent are in sys.path
+        nexus_str = str(NEXUS_ROOT)
+        if nexus_str not in sys.path:
+            sys.path.insert(0, nexus_str)
+        # Also add parent so 'core' is findable as nexus_genesis.core
+        parent_str = str(NEXUS_ROOT.parent)
+        if parent_str not in sys.path:
+            sys.path.insert(0, parent_str)
         print(f"[ NEXUS BRIDGE ] NEXUS_ROOT={NEXUS_ROOT}, exists={NEXUS_ROOT.exists()}")
+        print(f"[ NEXUS BRIDGE ] sys.path includes: {nexus_str}")
         from core.orchestrator import create_nexus_graph as _cng
         _create_nexus_graph = _cng
         NEXUS_AVAILABLE = True
@@ -108,6 +117,8 @@ NODE_INFO = {
     "testing":        {"icon": "🧪", "label": "Sandbox",         "msg": "Executing evolutionary unit tests"},
     "skeptic":        {"icon": "🔍", "label": "Skeptic",         "msg": "Performing global peer review"},
     "judge":          {"icon": "⚖",  "label": "Supreme Judge",   "msg": "Enforcing formal rigor"},
+    "critic":         {"icon": "🔎", "label": "Critic",           "msg": "Analysing errors — building repair plan"},
+    "repair":         {"icon": "🔧", "label": "Repair Agent",     "msg": "Applying surgical fixes to response"},
     "risk":           {"icon": "🚨", "label": "Risk Gate",        "msg": "Evaluating decision risk tier"},
     "commander":      {"icon": "🎯", "label": "Commander",       "msg": "Synthesising strategic status report"},
     "manifesto":      {"icon": "📜", "label": "Manifesto",       "msg": "Generating sovereign dossier"},
@@ -115,11 +126,11 @@ NODE_INFO = {
     "evolution":      {"icon": "🧬", "label": "Genesis",         "msg": "Proposing system evolution"},
 }
 
-TOTAL_NODES = 14
+TOTAL_NODES = 16
 NODE_ORDER = [
     "llmpick", "tom", "load_balancer", "visual_parser", "privacy",
     "broadcast", "visionary", "diagnostics", "coder", "testing",
-    "skeptic", "judge", "risk", "commander", "manifesto",
+    "skeptic", "judge", "critic", "repair", "risk", "commander", "manifesto",
     "memory_surgeon", "evolution",
 ]
 
@@ -192,6 +203,10 @@ async def run_nexus_stream(
             "proposed_edit":     None,
             "approval_granted":  False,
             "judge_verdict":     "",
+            "judge_issues":      "[]",
+            "judge_action":      "REVIEWED",
+            "repair_summary":    "",
+            "repair_history":    [],
         }
 
         async for event in app_graph.astream(
@@ -293,4 +308,3 @@ def get_intelligence_signals(limit: int = 10) -> list:
         return {"signals": signals, "stats": stats}
     except Exception as e:
         return {"signals": [], "stats": {"total": 0, "triggered": 0, "avg_score": 0.0}, "error": str(e)}
-
