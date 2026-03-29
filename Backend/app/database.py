@@ -122,8 +122,84 @@ async def get_db():
             await session.close()
 
 
+class KnowledgeCache(Base):
+    """
+    Inline knowledge base. Stores high-quality Q&A pairs so the system
+    can answer common questions without hitting external APIs.
+    Updated automatically when SOVEREIGN runs score >= 0.80.
+    """
+    __tablename__ = "knowledge_cache"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    question    = Column(Text, nullable=False)       # normalized question
+    answer      = Column(Text, nullable=False)       # best answer seen
+    score       = Column(Float, default=0.0)         # Judge score
+    task_type   = Column(String, nullable=True)      # COMPARE | CODE | EXPLAIN
+    hit_count   = Column(Integer, default=0)         # times served from cache
+    created_at  = Column(DateTime, default=func.now())
+    updated_at  = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
 async def create_tables():
     """Create all tables on startup if they don't exist."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     print("[ DATABASE ] Tables ready.")
+
+
+async def cache_lookup(question: str, threshold: float = 0.7) -> str | None:
+    """
+    Check if we have a cached answer for a similar question.
+    Uses simple keyword overlap — no embeddings needed.
+    Returns the cached answer or None.
+    """
+    try:
+        from sqlalchemy import select, func as sqlfunc
+        q_words = set(question.lower().split())
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(KnowledgeCache).where(KnowledgeCache.score >= threshold)
+                .order_by(KnowledgeCache.hit_count.desc())
+                .limit(20)
+            )
+            rows = result.scalars().all()
+            best_match = None
+            best_overlap = 0.0
+            for row in rows:
+                row_words = set(row.question.lower().split())
+                overlap = len(q_words & row_words) / max(len(q_words | row_words), 1)
+                if overlap > 0.6 and overlap > best_overlap:
+                    best_overlap = overlap
+                    best_match = row
+            if best_match:
+                # Increment hit count
+                best_match.hit_count += 1
+                await session.commit()
+                print(f"[ KNOWLEDGE CACHE ] Hit: {best_match.question[:50]} (overlap={best_overlap:.2f})")
+                return best_match.answer
+        return None
+    except Exception as e:
+        print(f"[ KNOWLEDGE CACHE ] Lookup error: {e}")
+        return None
+
+
+async def cache_store(question: str, answer: str, score: float, task_type: str = None):
+    """
+    Store a high-quality answer in the knowledge cache.
+    Only stores if score >= 0.75 (good answers only).
+    """
+    if score < 0.75 or not answer or not question:
+        return
+    try:
+        async with AsyncSessionLocal() as session:
+            entry = KnowledgeCache(
+                question=question[:500],
+                answer=answer[:5000],
+                score=score,
+                task_type=task_type,
+            )
+            session.add(entry)
+            await session.commit()
+            print(f"[ KNOWLEDGE CACHE ] Stored: {question[:50]} (score={score:.2f})")
+    except Exception as e:
+        print(f"[ KNOWLEDGE CACHE ] Store error: {e}")

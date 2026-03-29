@@ -84,9 +84,19 @@ if _tavily_available:
         _tavily_available = False
 
 if not _tavily_available:
-    from langchain_community.tools import DuckDuckGoSearchRun
-    search_tool = DuckDuckGoSearchRun()
-    print("--- [ NEXUS: Tavily unavailable  using DuckDuckGo ] ---")
+    try:
+        from langchain_community.tools import DuckDuckGoSearchRun
+        search_tool = DuckDuckGoSearchRun()
+        print("--- [ NEXUS: Tavily unavailable — using DuckDuckGo ] ---")
+    except Exception:
+        # DuckDuckGo also unavailable — use a simple GPT-based search stub
+        class _SearchStub:
+            def invoke(self, q):
+                return f"Web search unavailable. Answer from model knowledge only."
+            def run(self, q):
+                return self.invoke(q)
+        search_tool = _SearchStub()
+        print("--- [ NEXUS: All search tools unavailable — using model knowledge ] ---")
 arxiv_tool  = ArxivQueryRun()
 repl        = PythonREPL()
 

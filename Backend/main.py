@@ -47,19 +47,13 @@ def get_intelligence_signals(limit=10):
     return {"signals": [], "stats": {"total": 0, "triggered": 0, "avg_score": 0.0}}
 import json
 import asyncio
-from contextlib import asynccontextmanager
-from app.database import create_tables
-from app.redis_client import check_rate_limit, get_usage_stats
-from contextlib import asynccontextmanager
-from app.database import create_tables
-from app.redis_client import check_rate_limit, get_usage_stats
 import time
 from collections import defaultdict
 from fastapi import Request
 from contextlib import asynccontextmanager
 
 # Phase 2: Database + Redis
-from app.database import create_tables, AsyncSessionLocal, Session as DBSession, Dossier as DBDossier, JudgeViolation
+from app.database import create_tables, AsyncSessionLocal, Session as DBSession, Dossier as DBDossier, JudgeViolation, cache_lookup, cache_store
 from app.redis_client import check_rate_limit, get_usage_stats
 from sqlalchemy import select
 import uuid
@@ -173,16 +167,40 @@ async def root():
 
 @app.post("/assistant")
 async def assistant(payload: dict, request: Request):
+    user_input = payload.get("input", "").strip()
+    
+    # Rate limiting
+    client_ip = _get_client_ip(request)
+    allowed, reason = await check_rate_limit(client_ip, "quick")
+    if not allowed:
+        return {"status": "failed", "error": reason, "results": [], "plan": {"thoughts": reason}}
+
+    result = {}
+    
+    # ── KNOWLEDGE CACHE CHECK ─────────────────────────────────────────────
+    # Check if we have a high-quality cached answer before hitting external APIs
+    try:
+        cached = await cache_lookup(user_input)
+        if cached:
+            return {
+                "status": "success",
+                "results": [{"tool": "respond_to_user", "status": "success", "output": cached}],
+                "plan": {"thoughts": ""},
+                "source": "knowledge_cache"
+            }
+    except Exception:
+        pass  # Cache miss or error — proceed normally
+
     try:
         import asyncio
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             None,
-            lambda: run_agent(payload["input"], payload.get("user_id", "default_user"))
+            lambda: run_agent(user_input, payload.get("user_id", "default_user"))
         )
     except Exception as e:
         import traceback; traceback.print_exc()
-        return {"status": "failed", "error": str(e), "results": [], "plan": {"thoughts": f"Error: {e}"}}
+        result = {"status": "failed", "error": str(e), "results": [], "plan": {"thoughts": ""}}
 
     # Clean up results — strip internal reasoning from respond_to_user outputs
     try:
@@ -208,7 +226,59 @@ async def assistant(payload: dict, request: Request):
                     if cleaned:
                         r["output"] = cleaned
     except Exception:
-        pass  # Cleaning failed — return raw result, never 500
+        pass
+
+    # ── GUARANTEED FALLBACK ────────────────────────────────────────────────
+    # Check if any useful content was extracted. If not, answer directly
+    # from GPT-4o-mini. The system NEVER returns "No response generated."
+    has_content = False
+    try:
+        results = result.get("results", [])
+        for r in results:
+            out = str(r.get("output", ""))
+            if len(out) > 20 and "no internet" not in out.lower() and "no results" not in out.lower():
+                has_content = True
+                break
+        if not has_content:
+            thoughts = str(result.get("plan", {}).get("thoughts", ""))
+            if len(thoughts) > 50:
+                has_content = True
+    except Exception:
+        pass
+
+    if not has_content and user_input:
+        try:
+            from langchain_openai import ChatOpenAI
+            from langchain_core.messages import HumanMessage
+            fallback_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
+            fallback_prompt = (
+                f"Answer this question clearly and directly. "
+                f"If it requires current real-time data you don't have, say so briefly then answer with what you know.\n\n"
+                f"Question: {user_input}"
+            )
+            fallback_response = fallback_llm.invoke([HumanMessage(content=fallback_prompt)])
+            fallback_text = fallback_response.content.strip()
+            # Inject as a respond_to_user result
+            if "results" not in result:
+                result["results"] = []
+            result["results"].append({
+                "tool": "respond_to_user",
+                "status": "success",
+                "output": fallback_text
+            })
+            result["status"] = "success"
+            print(f"[ ASSISTANT ] Fallback GPT used for: {user_input[:50]}")
+        except Exception as fe:
+            print(f"[ ASSISTANT ] Fallback also failed: {fe}")
+            # Last resort — return a meaningful error, never blank
+            if "results" not in result:
+                result["results"] = []
+            result["results"].append({
+                "tool": "respond_to_user",
+                "status": "success",
+                "output": f"I encountered an issue processing your request. Please try rephrasing or use SOVEREIGN mode for this type of question."
+            })
+            result["status"] = "success"
 
     return result
 
@@ -443,5 +513,3 @@ async def nexus_health():
             "phase3":       True,
         }
     }
-
-
