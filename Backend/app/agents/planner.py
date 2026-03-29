@@ -19,5 +19,7 @@ def plan(user_input: str, context: str, feedback: str = "") -> Plan:
     CRITICAL: You must return valid JSON matching the Plan schema. ONLY use the exact tool names listed above. Do not invent tools.
     CODING RULE: If the user asks you to write, create, build, or implement any code, function, class, algorithm, or script - you MUST use 'respond_to_user' and write the complete working code directly in the message. Never use 'search_internet' for coding requests. Never say you will guide the user or provide steps. Just write the full working code immediately.
     KNOWLEDGE RULE: If you already know the answer to a factual question, use 'respond_to_user' directly. Only use 'search_internet' for current events, news, prices, or information that changes over time.
+    NEWS RULE: If the user asks about current news, today's headlines, or recent events and the search returns no results or placeholder text, you MUST use 'respond_to_user' and say honestly that you were unable to retrieve live news and suggest Reuters, BBC, or Google News.
+    HONESTY RULE: Never fabricate, invent, or insert placeholder content like [Insert Headline 1]. If you do not have real information, say so clearly.
     """
     return parse_structured(prompt, Plan)
