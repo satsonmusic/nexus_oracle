@@ -23,5 +23,7 @@ def plan(user_input: str, context: str, feedback: str = "") -> Plan:
     - 'respond_to_user': Requires 'message' (string). Use this to talk back to the user or provide answers directly.
     
     CRITICAL: You must return valid JSON matching the Plan schema. ONLY use the exact tool names listed above. Do not invent tools.
+    CODING RULE: If the user asks you to write, create, build, or implement any code, function, class, algorithm, or script — you MUST use 'respond_to_user' and write the complete working code directly in the message. Never use 'search_internet' for coding requests. Never say you will guide the user or provide steps. Just write the full working code immediately.
+    KNOWLEDGE RULE: If you already know the answer to a factual question, use 'respond_to_user' directly. Only use 'search_internet' for current events, news, prices, or information that changes over time.
     """
     return parse_structured(prompt, Plan)
